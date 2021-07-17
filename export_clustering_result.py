@@ -1,6 +1,6 @@
 
 from graph_embedding_config        import *
-from gva_utils                     import *
+from main_utils                    import *
 import pandas                      as pd
 import pickle
 import argparse
@@ -18,7 +18,8 @@ def main(configs):
     # nodes: nodes[repoID/userID] = nodeID
     origID2nodeID = {}
     f = open(configs.node_file, 'r')
-    for i, l in enumerate(f.readlines()):
+    temp = pickle.load(f)
+    for i, l in enumerate(temp):
         # repoID => nodeID mapping
         origID2nodeID[l.strip()] = str(i)
     nodeID2origID = {origID2nodeID[k]: k for k in origID2nodeID.keys()}

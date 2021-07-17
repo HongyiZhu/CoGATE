@@ -1,19 +1,25 @@
-from openne.line                import LINE
-from openne.grarep              import GraRep
-from openne.node2vec            import Node2vec
-from openne.lle                 import LLE
-from openne.lap                 import LaplacianEigenmaps
-from openne.sdne                import SDNE
-from openne.gf                  import GraphFactorization
-from openne.hope                import HOPE
-from openne.tadw                import TADW
+from openne.models.line                import LINE
+from openne.models.grarep              import GraRep
+from openne.models.node2vec            import Node2vec
+from openne.models.lle                 import LLE
+from openne.models.lap                 import LaplacianEigenmaps
+from openne.models.sdne                import SDNE
+from openne.models.gf                  import GraphFactorization
+from openne.models.hope                import HOPE
+from openne.models.tadw                import TADW
 from graph_embedding_config     import *
 from build_gcae_embedding       import build_gcae
 from build_vgae_embedding       import build_vgae
 from build_gate_embedding       import build_gate
+from build_cogate_embedding     import build_cogate, build_cogate_single
 # from build_cane_embedding       import build_cane
 # from build_dane_embedding       import build_dane
 from load_graph_embedding       import load_embedding
+from mygraph                    import Graph_Int, Graph_Str
+from main_utils                 import load_json, dict2dotdict, dotdict2dict
+import argparse
+import pickle
+import time
 
 
 def build_le(g, path, configs):
@@ -124,8 +130,83 @@ def build_embedding(graph, graph_str, model, path, configs):
         # 'DANE': build_dane,      
         'LINE': build_line,
         'GCAE': build_gcae,
-        'TADW': build_tadw                               
+        'TADW': build_tadw,
+        'COGATE': build_cogate,
+        'COGATE_SINGLE': build_cogate_single                               
     }
     func = build_functions.get(model)
     embedding = func(graph_str, path, configs) if model in ['DEEPWALK', "NODE2VEC"] else func(graph, path, configs)
     return embedding
+
+def process_node_index(edgelist_filename, node_index_filename, embedding_mapping):
+    f = open(edgelist_filename, 'r')
+    nodes = []
+    for line in f.readlines():
+        elements = line.strip().split()
+        if len(elements) < 2:
+            continue
+        else:
+            nodes.append(int(elements[0]))
+            nodes.append(int(elements[1]))
+    f.close()
+    nodes = sorted(list(set(nodes)), key=lambda x: int(x))
+    nodes_index = {x:i for i, x in enumerate(nodes)}
+    f = open(node_index_filename, 'wb')
+    pickle.dump(nodes_index, f)
+    f.close()
+
+    f = open(embedding_mapping, 'w')
+    f.write("EmbeddingID, NodeID\n")
+    for i, x in enumerate(nodes):
+        f.write("{},{}\n".format(str(i), str(x)))
+    f.close()
+
+
+def main(configs):
+    process_node_index(configs.edgelist_filename, configs.node_index_filename, configs.embedding_mapping)
+    temp = open(configs.node_index_filename, 'rb')
+    node_index = pickle.load(temp)
+    temp.close()
+
+    # load dataset
+    print("====================\nLoading edgelist")
+    t1 = time.time()
+    # load graph from edgelist and feature file
+    graph = Graph_Int()
+    graph.read_edgelist(filename=configs.edgelist_filename, node_index=node_index, weighted=configs.weighted_graph, directed=configs.directed_graph)
+    graph_str = Graph_Str()
+    graph_str.read_edgelist(filename=configs.edgelist_filename, node_index=node_index, weighted=configs.weighted_graph, directed=configs.directed_graph)
+    if configs.have_features:
+        graph.read_node_features(node_index=node_index, filename=configs.current_feature_file)
+    print("Data Loaded. Time elapsed: {:.3f}\n====================\n".format(time.time() - t1))
+
+    graph_embeddings = {}
+    # build graph embedding
+    print("====================\nBuilding Graph Embeddings\n")
+    t2 = time.time()
+    for model in configs.models:
+        graph_embeddings[model] = build_embedding(graph, graph_str, model, configs.current_embedding_path, configs)
+    print("Embeddings Constructed. Total time elapsed: {:.3f}\n====================".format(time.time() - t2))
+
+
+def get_parser():
+    parser = argparse.ArgumentParser(description="Parser for Embedding Building")
+    parser.add_argument("--json_path", type=str, required=True, help="Path to the json config file")
+    parser.add_argument("--feature_file", type=str, required=False, help="Select feature file")
+    return parser
+
+
+if __name__ == "__main__":
+    parser = get_parser()
+    args = parser.parse_args()
+
+    configs = load_json(args.json_path)
+    configs = dict2dotdict(configs)
+    configs.current_embedding_path = f"{configs.EMBEDDING_PATH}{args.feature_file}/"
+    configs.current_report_path = f"{configs.REPORT_PATH}{args.feature_file}/"
+    if configs.have_features and not args.feature_file:
+        print("Please specify a feature file to load")
+        exit(0)
+    if configs.have_features and args.feature_file:
+        configs.current_feature_file = f"./data/{configs.dataset}/{configs.attackType}_{configs.attackPlatform}_{args.feature_file}.features"
+    main(configs)

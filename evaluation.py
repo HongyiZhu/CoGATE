@@ -1,11 +1,10 @@
-import os
-import warnings
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-warnings.filterwarnings('ignore')
-import tensorflow as tf
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+# import os
+# import warnings
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# warnings.filterwarnings('ignore')
+# import tensorflow.compat.v1 as tf
+# tf.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
-from scipy                  import stats
 from sklearn.cluster        import KMeans, DBSCAN
 from sklearn.manifold       import TSNE
 from sklearn                import metrics
@@ -14,13 +13,11 @@ from build_embedding        import *
 from load_graph_embedding   import load_embedding
 from gem.evaluation         import evaluate_graph_reconstruction as gr
 from graph_embedding_config import *
-from gva_utils              import load_json, dict2dotdict, dotdict2dict
+from main_utils              import load_json, dict2dotdict, dotdict2dict
 import numpy as np
-import networkx as nx
 import argparse
 import pickle
 import time
-import json
 
 
 # evaluate embedding
@@ -56,30 +53,7 @@ def evaluate_clustering_performance(X, prediction):
     return (silhouette, chs, dbs)
 
 
-def process_node_index(edgelist_filename, node_index_filename, embedding_mapping):
-    f = open(edgelist_filename, 'r')
-    nodes = []
-    for line in f.readlines():
-        elements = line.strip().split()
-        if len(elements) < 2:
-            continue
-        else:
-            nodes.append(int(elements[0]))
-            nodes.append(int(elements[1]))
-    f.close()
-    nodes = sorted(list(set(nodes)), key=lambda x: int(x))
-    nodes_index = {x:i for i, x in enumerate(nodes)}
-    f = open(node_index_filename, 'wb')
-    pickle.dump(nodes_index, f)
-    f.close()
-
-    f = open(embedding_mapping, 'w')
-    f.write("EmbeddingID, NodeID\n")
-    for i, x in enumerate(nodes):
-        f.write("{},{}\n".format(str(i), str(x)))
-    f.close()
-
-def main(configs, LOAD_TRAINED_EMBEDDING, n_cluster):
+def main(configs, LOAD_TRAINED_EMBEDDING):
     process_node_index(configs.edgelist_filename, configs.node_index_filename, configs.embedding_mapping)
     temp = open(configs.node_index_filename, 'rb')
     node_index = pickle.load(temp)
@@ -90,9 +64,9 @@ def main(configs, LOAD_TRAINED_EMBEDDING, n_cluster):
     t1 = time.time()
     # load graph from edgelist and feature file
     graph = Graph_Int()
-    graph.read_edgelist(filename=configs.edgelist_filename, node_index=node_index, weighted=configs.weighted_graph, directed=False)
+    graph.read_edgelist(filename=configs.edgelist_filename, node_index=node_index, weighted=configs.weighted_graph, directed=configs.directed_graph)
     graph_str = Graph_Str()
-    graph_str.read_edgelist(filename=configs.edgelist_filename, node_index=node_index, weighted=configs.weighted_graph, directed=False)
+    graph_str.read_edgelist(filename=configs.edgelist_filename, node_index=node_index, weighted=configs.weighted_graph, directed=configs.directed_graph)
     if configs.have_features:
         graph.read_node_features(node_index=node_index, filename=configs.current_feature_file)
     print("Data Loaded. Time elapsed: {:.3f}\n====================\n".format(time.time() - t1))
@@ -194,7 +168,6 @@ def main(configs, LOAD_TRAINED_EMBEDDING, n_cluster):
 def get_parser():
     parser = argparse.ArgumentParser(description="Parser for Embedding Building and Clustering")
     parser.add_argument("--json_path", type=str, required=True, help="Path to the json config file")
-    parser.add_argument("--n_cluster", type=int, required=True, help="Number of clusters")
     parser.add_argument("--load_trained_embedding", type=bool, required=False, help="Whether load trained embeddings")
     parser.add_argument("--feature_file", type=str, required=True, help="Select feature file")
     return parser
@@ -208,4 +181,4 @@ if __name__ == "__main__":
     configs.current_embedding_path = f"{configs.EMBEDDING_PATH}{args.feature_file}/"
     configs.current_report_path = f"{configs.REPORT_PATH}{args.feature_file}/"
     configs.current_feature_file = f"./data/{configs.org}/{configs.dataset}_{args.feature_file}.features"
-    main(configs, args.load_trained_embedding, args.n_cluster)
+    main(configs, args.load_trained_embedding)

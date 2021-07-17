@@ -12,44 +12,55 @@ This is the code repository for the Co-occurrence Graph ATtention autoEncoder pr
 
 ## Dependency Requirement
 
-+ TensorFlow (<=1.14.0)
++ TensorFlow (>=2.0.0)
 + PyTorch
 + NetworkX (>=2.0)
 + GenSim
 + openpyxl
 + [OpenNE: An Open-Source Package for Network Embedding](https://github.com/thunlp/OpenNE)
+  + Please use the [pytorch](https://github.com/thunlp/OpenNE/tree/pytorch) branch
+  + [Git Clone Branch – How to Clone a Specific Branch](https://www.freecodecamp.org/news/git-clone-branch-how-to-clone-a-specific-branch/)
 + [GEM: Graph Embedding Methods](https://github.com/palash1992/GEM)
 
 ## Dataset
 
 ### Requirement
 
-Please format and place the following file in the corresponding folder: [node file](#node-file), [edge list](#edge-list), [feature matrix](#nodal-features).
+Please format and place the following file in the corresponding folder: [preprocessed sentence file](#preprocessed-sentence-documents), [full word list](#full-word-list), [edge list](#edge-list), [feature matrix](#nodal-features).
 
-### Node File
+### Preprocessed Sentence Documents
 
-*Location and Name*: Place the node file under the `./data/<org>/` folder with the name of `'<dataset>_nodes.csv'`.
+*Location and Name*: Place the preprocessed sentence documents under the `./data/<dataset>/` folder with the name of `'<attackType>_<attackPlatform>_preprocessed_sent_document.pkl'`.
 
-*Format*: Each line of the file is a userID or repoID. NodeID will be assigned to each userID/repoID in the given order.
+*Format*: The pickle dump file contains a tuple object `(sentences, documents)`. `sentences` comprises lists of tokenized documents and `documents` comprises a list of `gensim.TaggedDocument` objects. Each `TaggedDocument` object `documents[index]` is TaggedDocument(words=`sentences[index]`, tags=[`index`]).
+
+### Full Word List
+
+*Location and Name*: Place word list under the `./data/<dataset>/` folder with the name of `'<attackType>_<attackPlatform>_fullwordlist.pkl'`.
+
+*Format*: The pickle dump file contains a list of unique words extracted from the preprocessed sentence documents. This dump is used to ensure a fixed wordID->nodeID association.
 
 ```text
 Example:
-Filename: './data/<org>/user_nodes.csv'
-3985485 (NodeID = 0)
-8279795 (NodeID = 1)
-8296581 (NodeID = 2)
-...     (NodeID = ...)
+Filename: './data/<dataset>/<attackType>_<attackPlatform>_fullwordlist.pkl'
+Loaded list:
+[
+'Buffer',  # NodeID = 0
+'Client',  # NodeID = 1
+'Exploit', # NodeID = 2
+...        # NodeID = ...
+]
 ```
 
 ### Edge List
 
-*Location and Name*: Place the edge list under the `./data/<org>/` folder with the name of `'<dataset>.edgelist'` or `'<dataset>commits.edgelist'` (`dataset` can be "user" or "repo", use the latter one when constructing the graph using commits).
+*Location and Name*: Place the edge list under the `./data/<dataset>/` folder with the name of `'<attackType>_<attackPlatform>.edgelist'`.
 
-*Format*: An un-directional edge between nodes `a` and `b` can be denoted with `a<space>b` or `b<space>a`. Each edge takes a new line. If the graph is weighted, each edge can be denoted as `a<space>b<space>w`.
+*Format*: An directional edge between nodes `a` and `b` can be denoted with `a<space>b`. Each edge takes a new line. If the graph is weighted, each edge can be denoted as `a<space>b<space>w`. *Duplicated edges are allowed*.
 
 ```text
 Example 1 (un-weighted, constructed using commits):
-Filename: './data/<org>/usercommits.edgelist'
+Filename: './data/<dataset>/<attackType>_<attackPlatform>.edgelist'
 0 1
 1 2
 3 1
@@ -58,7 +69,7 @@ Filename: './data/<org>/usercommits.edgelist'
 
 ```text
 Example 2 (weighted):
-Filename: './data/<org>/user.edgelist'
+Filename: './data/<org>/<attackType>_<attackPlatform>.edgelist'
 0 1 1.0
 1 2 0.5
 3 1 0.785
@@ -67,15 +78,15 @@ Filename: './data/<org>/user.edgelist'
 
 ### Nodal Features
 
-*Location and Name*: Nodal features are stored under the `./data/<org>/feature_matrices/` folder titled `'<dataset>_<random names>.csv'`.
+*Location and Name*: Nodal features are stored under the `./data/<dataset>/feature_matrices/<attackType>_<attackPlatform>/` folder titled `'<feature set name>.csv'`.
 
-*Format*: For `d`-dimension nodal features, each row has `d+1` values, with userID/repoID followed by `d` features.
+*Format*: The CSV file doesn't contain a header line. For `d`-dimension nodal features, each row has `d+1` values, with a word followed by `d` features.
 
 ```csv
 Example:
-Filename: './data/<org>/feature_matrices/user_test.csv'
-3985485, 0.25, 0.35, 0.41, ...
-8279795, 0.18, 0.36, 0.24, ...
+Filename: './data/<dataset>/feature_matrices/<attackType>_<attackPlatform>/test.csv'
+Buffer, 0.25, 0.35, 0.41, ...
+Client, 0.18, 0.36, 0.24, ...
 ...
 ...
 ```
@@ -89,7 +100,7 @@ All experiment configurations on graph embedding (GE) models and clustering algo
 
 ## Automation Logic
 
-The `./gva.py` script (usage [here](#usage)) automates the following steps:
+The `./main_process.py` script (usage [here](#usage)) automates the following steps:
 
 1. [Preprocessing feature files](#step-1-preprocessing)
 2. [Building and evaluating node embeddings](#step-2-building-and-evaluating-node-embedding)
@@ -97,18 +108,21 @@ The `./gva.py` script (usage [here](#usage)) automates the following steps:
 
 ### Step 1. Preprocessing
 
-The `./preprocess_data.py` script parse nodal feature CSVs and generate corresponding `.features` files under the `./data/<org>/` folder.
++ The `./generate_fasttext_word_feature.py` script queries the pre-trained Facebook fastText word embedding model as word features.
++ The `./generate_identity_word_feature.py` script generates one-hot encoding as word features.
++ Other customized word features files can be store in the `./data/<dataset>/feature_matrices/<attackType>_<attackPlatform>/` folder.
++ The `./preprocess_data.py` script parse word feature CSVs and generate corresponding `.features` files under the `./data/<dataset>/` folder.
 
 ### Step 2. Building and Evaluating Node Embedding
 
-The `./evaluation.py` script builds node embeddings for the selected datset and evaluate the quality of generated embeddings.
+The `./evaluation.py` script builds node embeddings for the selected dataset and evaluate the quality of generated embeddings.
 
 ### Step 3. Exporting Results
 
 The `./export_clustering_result.py` and `./plot_tsne.py` scripts exports experiment results to the following folders:
 
-+ Dataset configuration: `./data/<org>/<dataset>_config.json`
-+ Embeddings: `./embeddings/<org>/<dataset>/<feature file>/<GE model>.nv`  
++ Dataset configuration: `./data/<dataset>/<attackType>_<attackPlatform>_config.json`
++ Embeddings: `./embeddings/<dataset>/<feature file>/<GE model>.nv`  
 
     ```text
     #nodes #dim
@@ -118,12 +132,11 @@ The `./export_clustering_result.py` and `./plot_tsne.py` scripts exports experim
     .  ...
     ```
 
-+ Runtime data: `./results/<org>/<dataset>/<feature file>/experiment-<n_cluster>.cache`
++ Runtime data: `./results/<dataset>/<attackType>_<attackPlatform>/<feature file>/experiment.cache`
 + Evaluation results:
-  + Mean Average Precision: `./results/<org>/<dataset>/MAP.xlsx`
-  + KMeans results (cluster labels): `./results/<org>/<dataset>/KMeans_labels`
-  + KMeans results (performance): `./results/<org>/<dataset>/KMeans_performance.xlsx`
-+ t-SNE visualization of clustered embeddings: `./results/<org>/<dataset>/<tsne>/[<GE model>]<feature>_<clustering>_<# clusters>.svg`
+  + Mean Average Precision: `./results/<dataset>/<attackType>_<attackPlatform>/<feature file>/MAP.xlsx`
+  + KMeans results (cluster labels): `./results/<dataset>/<attackType>_<attackPlatform>/<feature file>/KMeans_labels.xlsx`
+  + KMeans results (performance): `./results/<dataset>/<attackType>_<attackPlatform>/<feature file>/KMeans_performance.xlsx`
 
 ## Usage
 
@@ -137,16 +150,13 @@ Automated GVA Processor.
 
 optional arguments:
   -h, --help                        show this help message and exit
-  --org             ORG             Organization of the analysis.
-  --dataset         {user,repo}     Process 'user' or 'repo' dataset.
-  --n_clusters      N_CLUSTERS      Comma delimited list input (e.g., 2,3,4,5,6), default=2.
+  --dataset         {title only,title and description}     Select 'title only' or 'title and description' dataset.
   --have_features   HAVE_FEATURES   Whether the network has nodal features, default=True.
-  --weighted_graph  WEIGHTED_GRAPH  Whether the edges are weighted, default=True.
+  --weighted_graph  WEIGHTED_GRAPH  Whether the edges are weighted, default=False.
   --models          MODELS          Comma delimited model names (e.g., TADW,GCAE,GATE),
                                     default=TADW,GCAE,GATE.
-  --commit_edgelist COMMIT_EDGELIST Use edgelist constructed with commit info, default=False.
-  --step            {P,B,E,T,A}     Perform a particular step ([P]reprocess, [B]uild embedding,
-                                    [E]xport results, Plot [T]SNE) or [A]ll steps), default=A.
+  --step            {P,B,E,A}     Perform a particular step ([P]reprocess, [B]uild embedding,
+                                    [E]xport results) or [A]ll steps), default=A.
 ```
 
 ### *Example 1*
@@ -180,5 +190,4 @@ Assume some GE models did not produce valid embeddings for a particular feature 
 4. ```sh
    python ./gva.py --org tacc --dataset repo --step E --n_clusters 2,3,4,5,6
    python ./gva.py --org tacc --dataset repo --step T --n_clusters 2,3,4,5,6
-   ``
-   
+   ```

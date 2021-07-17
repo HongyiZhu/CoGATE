@@ -13,13 +13,18 @@ def prepare_graph_data(adj, configs):
     # adapted from preprocess_adj_bias
     num_nodes = adj.shape[0]
     adj = adj + sp.eye(num_nodes) - sp.eye(num_nodes)  # self-loop
+    deg = adj.copy()
     if not configs.weighted_graph:
         adj[adj > 0.0] = 1.0
     if not sp.isspmatrix_coo(adj):
         adj = adj.tocoo()
+    if not sp.isspmatrix_coo(deg):
+        deg = deg.tocoo()
+    deg = deg.astype(np.float32)
     adj = adj.astype(np.float32)
-    indices = np.vstack((adj.col, adj.row)).transpose()
-    return (indices, adj.data, adj.shape), adj.row, adj.col
+    indices_adj = np.vstack((adj.row, adj.col)).transpose()
+    indices_deg = np.vstack((deg.row, deg.col)).transpose()
+    return (indices_adj, adj.data, adj.shape), (indices_deg, deg.data, adj.shape), adj.row, adj.col
 
 def prepare_sparse_load(features):
     if not sp.isspmatrix_coo(features):
@@ -48,6 +53,8 @@ def load_data(configs):
         adj = sp.coo_matrix((np.ones(edges.shape[0]), ([node_index[x] for x in edges[:, 0]], [node_index[x] for x in edges[:, 1]])),
                         shape=(N, N),
                         dtype=np.float32)
+    adj.sum_duplicates()
+
     if configs.have_features:
         fin = open(configs.current_feature_file, 'r')
         feature_dict = {}
@@ -66,8 +73,10 @@ def load_data(configs):
                 features[key][i] = element
     else:
         features = np.eye((N, N), dtype=np.float32)
-    adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
-    adj = normalize_adj(adj)
+    # features, _ = preprocess_features(features)
+    if not configs.directed_graph:
+        adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
+    # adj = normalize_adj(adj)
     return adj, features
 
 def sparse_to_tuple(sparse_mx):

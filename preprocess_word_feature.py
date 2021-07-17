@@ -1,30 +1,32 @@
-from gva_utils          import load_json, dict2dotdict
+from main_utils          import load_json, dict2dotdict
 import argparse
+import pickle
+import os
 
 def main(configs):
-    for feature_file in configs.feature_files:
-        features = f"{configs.FEATURE_PATH}/{feature_file}.csv"
+    feature_files = [filename.split(".")[0] for filename in os.listdir(configs.FEATURE_PATH)]
+    for feature_file in feature_files:
+        features = f"{configs.FEATURE_PATH}{feature_file}.csv"
         print(f"\nProcessing feature file {features}")
-        output_features = f"./data/{configs.org}/{configs.dataset}_{feature_file}.features"
+        output_features = f"./data/{configs.dataset}/{configs.attackType}_{configs.attackPlatform}_{feature_file}.features"
 
-        nodes = {}
+        words = {}
         # read nodes
-        f = open(configs.node_file, 'r')
-        for i, l in enumerate(f.readlines()):
+        f = open(configs.node_file, 'rb')
+        fl = pickle.load(f)
+        for i, l in enumerate(fl):
             # repoID => nodeID mapping
-            nodes[l.strip()] = str(i)
+            words[l.strip()] = str(i)
         f.close()
 
         # read lines
-        f = open(features, 'r')
+        f = open(features, 'r', encoding='utf8')
         g = open(output_features, 'w')
-        # skip csv header
-        f.readline()
         for l in f.readlines():
-            # convert repoID to nodeID
+            # convert word to wordID
             try:
                 vec = l.strip().split(",")
-                g.write("{} ".format(nodes[vec[0]]))
+                g.write("{} ".format(words[vec[0]]))
                 g.write(" ".join(vec[1:]))
                 g.write("\n")
             except:
